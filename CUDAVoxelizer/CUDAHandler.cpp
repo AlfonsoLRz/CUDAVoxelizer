@@ -50,7 +50,6 @@ void CUDAHandler::setDevice(uint8_t deviceIndex)
 void CUDAHandler::checkError(cudaError_t result)
 {
     if (result != cudaSuccess) {
-        printf("%s\n", cudaGetErrorString(result));
-        exit(EXIT_FAILURE);
+        throw std::runtime_error(cudaGetErrorString(result));
     }
 }

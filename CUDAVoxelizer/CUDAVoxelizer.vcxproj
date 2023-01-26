@@ -61,6 +61,7 @@
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <Include>Fonts/;Patterns/;Rendering/;Geometry/;PrecompiledHeaders/;Libraries/imguifiledialog/;Libraries/imgizmo</Include>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -85,10 +86,12 @@
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <Include>Fonts/;Patterns/;Rendering/;Geometry/;PrecompiledHeaders/;Libraries/imguifiledialog/;Libraries/imgizmo</Include>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="main.cpp" />
+    <CudaCompile Include="Voxelization.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CUDAHandler.h" />
@@ -135,6 +138,7 @@
     <ClInclude Include="Rendering\TextureList.h" />
     <ClInclude Include="Rendering\VAO.h" />
     <ClInclude Include="Rendering\Window.h" />
+    <ClInclude Include="Voxelization.cuh" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CUDAHandler.cpp" />
@@ -165,7 +169,9 @@
     <ClCompile Include="Rendering\GuiUtilities.cpp" />
     <ClCompile Include="Rendering\Image.cpp" />
     <ClCompile Include="Rendering\InputManager.cpp" />
-    <ClCompile Include="Rendering\Model3D.cpp" />
+    <CudaCompile Include="Rendering\Model3D.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
     <ClCompile Include="Rendering\Renderer.cpp" />
     <ClCompile Include="Rendering\RenderingShader.cpp" />
     <ClCompile Include="Rendering\SceneContent.cpp" />
@@ -175,6 +181,9 @@
     <ClCompile Include="Rendering\TextureList.cpp" />
     <ClCompile Include="Rendering\VAO.cpp" />
     <ClCompile Include="Rendering\Window.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

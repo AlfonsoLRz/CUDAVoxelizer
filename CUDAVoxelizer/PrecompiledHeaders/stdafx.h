@@ -36,6 +36,7 @@
 #include "imgui/examples/imgui_impl_opengl3.h"
 
 // CUDA
+#include "cooperative_groups.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>

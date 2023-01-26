@@ -2,6 +2,8 @@
 #include "Model3D.h"
 
 #include "../CUDAHandler.h"
+#include "RandomUtilities.h"
+#include "../Voxelization.cuh"
 
 // Static properties
 
@@ -167,18 +169,74 @@ AlgGeom::Model3D* AlgGeom::Model3D::setTopologyVisibility(VAO::IBO_slots topolog
 
 void AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions)
 {
-    CUDAHandler* cudaHandler = new CUDAHandler;
-    cudaHandler->setDevice();
-
     // Define voxels
+    size_t numThreadsBlock = 512;
+    size_t numSamples = 256;
     size_t numVoxels = voxelizationDimensions.x * voxelizationDimensions.y * voxelizationDimensions.z;
-    uint8_t* voxels = (uint8_t*)calloc(numVoxels, sizeof(uint8_t));
-    int* bufferGPU;
 
-    cudaHandler->initializeBufferGPU(bufferGPU, voxels, numVoxels);
-    cudaHandler->sendBufferGPU(bufferGPU, voxels, numVoxels);
+    int* voxels = (int*)calloc(numVoxels, sizeof(int)), *voxelGPU;
+    vec2* noise = (vec2*)malloc(numSamples * sizeof(vec2)), * noiseGPU;
+    VAO::Vertex* verticesGPU;
+    size_t occupiedVoxels = 0; size_t* occupiedVoxelsGPU;
 
-    cudaHandler->free(bufferGPU);
+    // Fill noise buffer
+    for (int sample = 0; sample < numSamples; ++sample)
+        noise[sample] = vec2(RandomUtilities::getUniformRandom(), RandomUtilities::getUniformRandom());
+
+    CUDAHandler::initializeBufferGPU(voxelGPU, numVoxels, voxels);
+    CUDAHandler::initializeBufferGPU(noiseGPU, numSamples, noise);
+
+    AABBGPU aabb (this->getAABB(false), voxelizationDimensions);
+    CUDAHandler::checkError(cudaMemcpyToSymbol(c_aabb, &aabb, sizeof(AABBGPU)));
+    CUDAHandler::checkError(cudaMemcpyToSymbol(c_gridDimensions, &voxelizationDimensions, sizeof(uvec3)));
+     
+    // Fill voxels
+    for (auto& component : _components)
+    {
+        std::vector<VAO::Vertex>* vertices = &component->_vertices;
+        std::vector<GLuint>* indices = &component->_indices[VAO::IBO_TRIANGLE];
+        size_t numFaces = indices->size() / 4;
+        unsigned* indicesGPU;
+
+        CUDAHandler::initializeBufferGPU(verticesGPU, vertices->size(), vertices->data());
+        CUDAHandler::initializeBufferGPU(indicesGPU, indices->size(), indices->data());
+
+        voxelizeComponent<<<CUDAHandler::getNumBlocks(numFaces * numSamples, numThreadsBlock), numThreadsBlock >> > (numFaces, numSamples, voxelGPU, verticesGPU, indicesGPU, noiseGPU);
+
+        CUDAHandler::free(verticesGPU);
+        CUDAHandler::free(indicesGPU);
+    }
+
+    // Count occupied voxels
+    {
+        CUDAHandler::initializeBufferGPU(occupiedVoxelsGPU, 1, &occupiedVoxels);
+
+        countOccupiedVoxels<<<CUDAHandler::getNumBlocks(numVoxels, numThreadsBlock), numThreadsBlock>>>(numVoxels, voxelGPU, occupiedVoxelsGPU);
+
+        CUDAHandler::downloadBufferGPU(occupiedVoxelsGPU, &occupiedVoxels, 1);
+    }
+
+    // Generate voxel' translations
+    {
+        size_t numTranslationVectors = occupiedVoxels;
+        occupiedVoxels = 0;
+        vec3* translationBuffer = (vec3*)malloc(numTranslationVectors * sizeof(vec3)), * translationGPU;
+
+        CUDAHandler::initializeBufferGPU(translationGPU, numTranslationVectors);
+        CUDAHandler::initializeBufferGPU(occupiedVoxelsGPU, 1, &occupiedVoxels);
+
+        generateVoxelTranslation<<<CUDAHandler::getNumBlocks(numVoxels, numThreadsBlock), numThreadsBlock>>>(numVoxels, voxelGPU, occupiedVoxelsGPU, translationGPU);
+
+        CUDAHandler::downloadBufferGPU(translationGPU, translationBuffer, numTranslationVectors);
+        for (int i = 0; i < 100; ++i)
+            std::cout << translationBuffer[i].x << " " << translationBuffer[i].y << " " << translationBuffer[i].z << std::endl;
+    }
+
+    //CUDAHandler::downloadBufferGPU(debugBufferGPU, debugBuffer, numVoxels);
+
+    CUDAHandler::free(voxelGPU);
+    free(noise);
+    free(voxels);
 }
 
 // Private methods

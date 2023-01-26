@@ -90,6 +90,7 @@ namespace AlgGeom
 	protected:
 		void buildVao(Component* component);
 		void loadModelBinaryFile(const std::string& path);
+		void prefixScan(int* voxels, size_t size, int*& prefixScanGPU);
 		void writeBinaryFile(const std::string& path);
 
 	public:
@@ -98,7 +99,7 @@ namespace AlgGeom
 
 		bool belongsModel(Component* component);
 		virtual void draw(RenderingShader* shader, MatrixRenderInformation* matrixInformation, ApplicationState* appState, GLuint primitive);
-		AABB getAABB() { return _aabb.dot(_modelMatrix); }
+		AABB getAABB(bool applyModelMatrix = true) { return applyModelMatrix ? _aabb.dot(_modelMatrix) : _aabb; }
 		mat4 getModelMatrix() { return _modelMatrix; }
 		std::string getName() { return _name; }
 		Model3D* moveGeometryToOrigin(const mat4& origMatrix = mat4(1.0f), float maxScale = FLT_MAX);

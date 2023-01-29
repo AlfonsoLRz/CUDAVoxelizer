@@ -78,6 +78,7 @@ void AlgGeom::Renderer::createShaderProgram()
     _pointShader = ShaderProgramDB::getInstance()->getShader(ShaderProgramDB::POINT_RENDERING);
     _lineShader = ShaderProgramDB::getInstance()->getShader(ShaderProgramDB::LINE_RENDERING);
     _triangleShader = ShaderProgramDB::getInstance()->getShader(ShaderProgramDB::TRIANGLE_RENDERING);
+    _multiInstanceTriangleShader = ShaderProgramDB::getInstance()->getShader(ShaderProgramDB::MULTI_INSTANCE_TRIANGLE_RENDERING);
 }
 
 void AlgGeom::Renderer::prepareOpenGL(uint16_t width, uint16_t height, ApplicationState* appState)

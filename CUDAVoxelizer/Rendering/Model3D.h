@@ -17,6 +17,8 @@
 
 namespace AlgGeom
 {
+	class DrawVoxelization;
+
 	class Model3D
 	{
 		friend class GUI;
@@ -86,12 +88,14 @@ namespace AlgGeom
 		std::vector<std::unique_ptr<Component>>		_components;
 		mat4										_modelMatrix;
 		std::string									_name;
+		DrawVoxelization*							_voxelization;
 
 	protected:
 		void buildVao(Component* component);
 		void loadModelBinaryFile(const std::string& path);
-		void prefixScan(int* voxels, size_t size, int*& prefixScanGPU);
 		void writeBinaryFile(const std::string& path);
+		void writeVoxelizationObj(const std::string& path, vec3* translationVectors, vec3 scale, size_t numVoxels);
+		void writeVoxelizationPly(const std::string& path, vec3* translationVectors, vec3 scale, size_t numVoxels);
 
 	public:
 		Model3D();
@@ -109,7 +113,25 @@ namespace AlgGeom
 		Model3D* setPointColor(const vec3& color);
 		Model3D* setTriangleColor(const vec4& color);
 		Model3D* setTopologyVisibility(VAO::IBO_slots topology, bool visible);
-		void voxelize(const uvec3& voxelizationDimensions);
+		AlgGeom::DrawVoxelization* voxelize(const uvec3& voxelizationDimensions);
+	};
+
+	class DrawVoxelization : public Model3D
+	{
+	protected:
+		size_t	_numVoxels;
+		vec3	_voxelLength;
+
+	public:
+		static Component* getVoxel();
+
+	public:
+		DrawVoxelization();
+		virtual ~DrawVoxelization();
+
+		virtual void draw(RenderingShader* shader, MatrixRenderInformation* matrixInformation, ApplicationState* appState, GLuint primitive);
+		vec3 getVoxelScale() { return _voxelLength; }
+		DrawVoxelization* loadVoxelization(vec3* translation, size_t numVoxels, vec3 voxelScale);
 	};
 }
 

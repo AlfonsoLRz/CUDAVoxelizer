@@ -9,7 +9,9 @@ namespace AlgGeom
 	public:
 		enum VBO_slots
 		{
-			VBO_POSITION, VBO_NORMAL, VBO_TEXT_COORD, VBO_TANGENT, VBO_BITANGENT, NUM_VBOS
+			VBO_POSITION, VBO_NORMAL, VBO_TEXT_COORD, VBO_TANGENT, VBO_BITANGENT, 
+			VBO_MULTI_POSITION,
+			NUM_VBOS
 		};
 
 		enum IBO_slots
@@ -40,12 +42,29 @@ namespace AlgGeom
 		virtual ~VAO();
 
 		void drawObject(IBO_slots ibo, GLuint openGLPrimitive, GLuint numIndices);
+		void drawObject(IBO_slots ibo, GLuint openGLPrimitive, GLuint numIndices, GLuint numInstances);
+		template<typename T, typename Z>
+		int defineMultiInstancingVBO(VBO_slots vbo, const T dataExample, const Z dataPrimitive, const GLuint openGLBasicType);
 
 		template<typename T>
 		void setVBOData(VBO_slots vbo, T* geometryData, GLuint size, GLuint changeFrequency = GL_STATIC_DRAW);
 		void setVBOData(const std::vector<Vertex>& vertices, GLuint changeFrequency = GL_STATIC_DRAW);
 		void setIBOData(IBO_slots ibo, const std::vector<GLuint>& indices, GLuint changeFrequency = GL_STATIC_DRAW);
 	};
+
+	template<typename T, typename Z>
+	inline int VAO::defineMultiInstancingVBO(VBO_slots vbo, const T dataExample, const Z dataPrimitive, const GLuint openGLBasicType)
+	{
+		glBindVertexArray(_vao);
+		glGenBuffers(1, &_vbos[vbo]);
+		glBindBuffer(GL_ARRAY_BUFFER, _vbos[vbo]);
+		glEnableVertexAttribArray(vbo);
+		glVertexAttribPointer(vbo, sizeof(dataExample) / sizeof(dataPrimitive), openGLBasicType, GL_FALSE, sizeof(dataExample), (GLubyte*)nullptr);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glVertexAttribDivisor(vbo, 1);
+
+		return vbo;
+	}
 
 	template<typename T>
 	inline void VAO::setVBOData(VBO_slots vbo, T* geometryData, GLuint size, GLuint changeFrequency)

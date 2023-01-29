@@ -10,7 +10,7 @@ namespace AlgGeom
 		friend class Singleton<ShaderProgramDB>;
 
 	private:
-		static std::unordered_map<uint8_t, std::string>								RENDERING_SHADER_PATH;
+		static std::unordered_map<uint8_t, std::string>									RENDERING_SHADER_PATH;
 		static std::unordered_map<uint8_t, std::unique_ptr<AlgGeom::RenderingShader>>	_renderingShader;
 
 	public:
@@ -19,6 +19,7 @@ namespace AlgGeom
 			POINT_RENDERING,
 			LINE_RENDERING,
 			TRIANGLE_RENDERING,
+			MULTI_INSTANCE_TRIANGLE_RENDERING
 		};
 
 	private:

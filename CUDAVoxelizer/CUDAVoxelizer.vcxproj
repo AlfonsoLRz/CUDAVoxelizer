@@ -183,6 +183,12 @@
     <ClCompile Include="Rendering\Window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Assets\Shaders\line-fs.glsl" />
+    <None Include="Assets\Shaders\line-vs.glsl" />
+    <None Include="Assets\Shaders\point-fs.glsl" />
+    <None Include="Assets\Shaders\point-vs.glsl" />
+    <None Include="Assets\Shaders\triangle-fs.glsl" />
+    <None Include="Assets\Shaders\triangle-vs.glsl" />
     <None Include="cpp.hint" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -7,6 +7,7 @@ std::unordered_map<uint8_t, std::string> AlgGeom::ShaderProgramDB::RENDERING_SHA
 		{RenderingShaderId::LINE_RENDERING, "Assets/Shaders/line"},
 		{RenderingShaderId::POINT_RENDERING, "Assets/Shaders/point"},
 		{RenderingShaderId::TRIANGLE_RENDERING, "Assets/Shaders/triangle"},
+		{RenderingShaderId::MULTI_INSTANCE_TRIANGLE_RENDERING, "Assets/Shaders/multiInstanceTriangle"}
 };
 
 std::unordered_map<uint8_t, std::unique_ptr<AlgGeom::RenderingShader>> AlgGeom::ShaderProgramDB::_renderingShader;

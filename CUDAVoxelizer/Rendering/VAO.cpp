@@ -9,7 +9,7 @@ AlgGeom::VAO::VAO(bool interleaved)
 	glBindVertexArray(_vao);
 
 	// VBOs
-	_vbos.resize(interleaved ? 1 : NUM_VBOS);
+	_vbos.resize(NUM_VBOS);
 	glGenBuffers(static_cast<GLsizei>(_vbos.size()), _vbos.data());
 
 	if (!interleaved)
@@ -41,6 +41,13 @@ void AlgGeom::VAO::drawObject(IBO_slots ibo, GLuint openGLPrimitive, GLuint numI
 	glBindVertexArray(_vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _ibos[ibo]);
 	glDrawElements(openGLPrimitive, numIndices, GL_UNSIGNED_INT, nullptr);
+}
+
+void AlgGeom::VAO::drawObject(IBO_slots ibo, GLuint openGLPrimitive, GLuint numIndices, GLuint numInstances)
+{
+	glBindVertexArray(_vao);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, _ibos[ibo]);
+	glDrawElementsInstanced(openGLPrimitive, numIndices, GL_UNSIGNED_INT, nullptr, numInstances);
 }
 
 void AlgGeom::VAO::setVBOData(const std::vector<Vertex>& vertices, GLuint changeFrequency)

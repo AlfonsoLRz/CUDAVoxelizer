@@ -22,7 +22,7 @@ namespace AlgGeom
 		SceneContent*								_content;
 		GUI*										_gui;
 		FBOScreenshot*								_screenshoter;
-		RenderingShader*							_triangleShader, *_lineShader, *_pointShader;
+		RenderingShader*							_triangleShader, *_lineShader, *_pointShader, *_multiInstanceTriangleShader;
 
 	private:
 		Renderer();

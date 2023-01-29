@@ -45,6 +45,23 @@ void CUDAHandler::setDevice(uint8_t deviceIndex)
     checkError(cudaSetDevice(bestDevice));
 }
 
+void CUDAHandler::startTimer(cudaEvent_t& startEvent, cudaEvent_t& stopEvent)
+{
+    checkError(cudaEventCreate(&startEvent));
+    checkError(cudaEventCreate(&stopEvent));
+    checkError(cudaEventRecord(startEvent, 0));
+}
+
+float CUDAHandler::stopTimer(cudaEvent_t& startEvent, cudaEvent_t& stopEvent)
+{
+    float ms;
+    checkError(cudaEventRecord(stopEvent, 0));
+    checkError(cudaEventSynchronize(stopEvent));
+    checkError(cudaEventElapsedTime(&ms, startEvent, stopEvent));
+
+    return ms;
+}
+
 // Protected methods
 
 void CUDAHandler::checkError(cudaError_t result)

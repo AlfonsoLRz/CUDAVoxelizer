@@ -1,8 +1,10 @@
 #include "stdafx.h"
 #include "Model3D.h"
 
+#include "assimp/Exporter.hpp"
 #include "../CUDAHandler.h"
 #include "RandomUtilities.h"
+#include "tinyply.h"
 #include "../Voxelization.cuh"
 
 // Static properties
@@ -12,7 +14,7 @@ std::unordered_set<std::string> AlgGeom::Model3D::USED_NAMES;
 
 // Public methods
 
-AlgGeom::Model3D::Model3D(): _modelMatrix(1.0f)
+AlgGeom::Model3D::Model3D(): _modelMatrix(1.0f), _voxelization(nullptr)
 {
     this->overrideModelName();
 }
@@ -34,6 +36,8 @@ bool AlgGeom::Model3D::belongsModel(Component* component)
 
 void AlgGeom::Model3D::draw(RenderingShader* shader, MatrixRenderInformation* matrixInformation, ApplicationState* appState, GLuint primitive)
 {
+    shader->setSubroutineUniform(GL_VERTEX_SHADER, "instanceUniform", "singleInstanceUniform");
+
     for (auto& component : _components)
     {
         if (component->_enabled && component->_vao)
@@ -85,6 +89,11 @@ void AlgGeom::Model3D::draw(RenderingShader* shader, MatrixRenderInformation* ma
             matrixInformation->undoMatrix(MatrixRenderInformation::VIEW);
             matrixInformation->undoMatrix(MatrixRenderInformation::VIEW_PROJECTION);
         }
+    }
+
+    if (_voxelization)
+    {
+        _voxelization->setModelMatrix(this->_modelMatrix);
     }
 }
 
@@ -167,17 +176,21 @@ AlgGeom::Model3D* AlgGeom::Model3D::setTopologyVisibility(VAO::IBO_slots topolog
     return this;
 }
 
-void AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions)
+AlgGeom::DrawVoxelization* AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions)
 {
     // Define voxels
     size_t numThreadsBlock = 512;
-    size_t numSamples = 256;
+    size_t numSamples = 1024;
     size_t numVoxels = voxelizationDimensions.x * voxelizationDimensions.y * voxelizationDimensions.z;
 
     int* voxels = (int*)calloc(numVoxels, sizeof(int)), *voxelGPU;
     vec2* noise = (vec2*)malloc(numSamples * sizeof(vec2)), * noiseGPU;
     VAO::Vertex* verticesGPU;
+    unsigned* indicesGPU;
     size_t occupiedVoxels = 0; size_t* occupiedVoxelsGPU;
+
+    cudaEvent_t startTimer = 0, stopTimer = 0;
+    CUDAHandler::startTimer(startTimer, stopTimer);
 
     // Fill noise buffer
     for (int sample = 0; sample < numSamples; ++sample)
@@ -189,22 +202,38 @@ void AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions)
     AABBGPU aabb (this->getAABB(false), voxelizationDimensions);
     CUDAHandler::checkError(cudaMemcpyToSymbol(c_aabb, &aabb, sizeof(AABBGPU)));
     CUDAHandler::checkError(cudaMemcpyToSymbol(c_gridDimensions, &voxelizationDimensions, sizeof(uvec3)));
-     
-    // Fill voxels
+
+    // Create vertices and indices buffer
+    size_t numVertices = 0, numIndices = 0, currentVertices = 0, currentIndices = 0;
     for (auto& component : _components)
     {
-        std::vector<VAO::Vertex>* vertices = &component->_vertices;
-        std::vector<GLuint>* indices = &component->_indices[VAO::IBO_TRIANGLE];
+        numVertices += component->_vertices.size();
+        numIndices += component->_indices[VAO::IBO_TRIANGLE].size();
+    }
+
+    CUDAHandler::initializeBufferGPU(verticesGPU, numVertices);
+    CUDAHandler::initializeBufferGPU(indicesGPU, numIndices);
+
+    // Overlap execution
+    std::vector<cudaStream_t> dataStream (_components.size());
+    for (auto& dataStreamId : dataStream)
+    {
+        CUDAHandler::checkError(cudaStreamCreate(&dataStreamId));
+    }
+     
+    // Fill voxels
+    for (int componentId = 0; componentId < _components.size(); ++componentId)
+    {
+        std::vector<VAO::Vertex>* vertices = &_components[componentId]->_vertices;
+        std::vector<GLuint>* indices = &_components[componentId]->_indices[VAO::IBO_TRIANGLE];
         size_t numFaces = indices->size() / 4;
-        unsigned* indicesGPU;
 
-        CUDAHandler::initializeBufferGPU(verticesGPU, vertices->size(), vertices->data());
-        CUDAHandler::initializeBufferGPU(indicesGPU, indices->size(), indices->data());
+        CUDAHandler::checkError(cudaMemcpyAsync(&verticesGPU[currentVertices], vertices->data(), vertices->size() * sizeof(VAO::Vertex), cudaMemcpyHostToDevice, dataStream[componentId]));
+        CUDAHandler::checkError(cudaMemcpyAsync(&indicesGPU[currentIndices], indices->data(), indices->size() * sizeof(unsigned), cudaMemcpyHostToDevice, dataStream[componentId]));
+        voxelizeComponent<<<CUDAHandler::getNumBlocks(numFaces * numSamples, numThreadsBlock), numThreadsBlock, 0, dataStream[componentId]>>>(numFaces, currentVertices, currentIndices, numSamples, voxelGPU, verticesGPU, indicesGPU, noiseGPU);
 
-        voxelizeComponent<<<CUDAHandler::getNumBlocks(numFaces * numSamples, numThreadsBlock), numThreadsBlock >> > (numFaces, numSamples, voxelGPU, verticesGPU, indicesGPU, noiseGPU);
-
-        CUDAHandler::free(verticesGPU);
-        CUDAHandler::free(indicesGPU);
+        currentVertices += vertices->size();
+        currentIndices += indices->size();
     }
 
     // Count occupied voxels
@@ -228,15 +257,29 @@ void AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions)
         generateVoxelTranslation<<<CUDAHandler::getNumBlocks(numVoxels, numThreadsBlock), numThreadsBlock>>>(numVoxels, voxelGPU, occupiedVoxelsGPU, translationGPU);
 
         CUDAHandler::downloadBufferGPU(translationGPU, translationBuffer, numTranslationVectors);
-        for (int i = 0; i < 100; ++i)
-            std::cout << translationBuffer[i].x << " " << translationBuffer[i].y << " " << translationBuffer[i].z << std::endl;
+
+        printf("Response time (ms): %f\n", CUDAHandler::stopTimer(startTimer, stopTimer));
+
+        _voxelization = new DrawVoxelization();
+        _voxelization->loadVoxelization(translationBuffer, numTranslationVectors, aabb.getStepLength());
+        this->writeVoxelizationObj("voxels.obj", translationBuffer, aabb.getStepLength(), numTranslationVectors);
+
+        free(translationBuffer);
     }
 
-    //CUDAHandler::downloadBufferGPU(debugBufferGPU, debugBuffer, numVoxels);
-
     CUDAHandler::free(voxelGPU);
+    CUDAHandler::free(verticesGPU);
+    CUDAHandler::free(indicesGPU);
     free(noise);
     free(voxels);
+
+    // Destroy data streams
+    for (auto& dataStreamId : dataStream)
+    {
+        CUDAHandler::checkError(cudaStreamDestroy(dataStreamId));
+    }
+
+    return _voxelization;
 }
 
 // Private methods
@@ -322,6 +365,103 @@ void AlgGeom::Model3D::writeBinaryFile(const std::string& path)
     fout.close();
 }
 
+void AlgGeom::Model3D::writeVoxelizationObj(const std::string& path, vec3* translationVectors, vec3 scale, size_t numVoxels)
+{
+    Component* voxel = DrawVoxelization::getVoxel();
+    size_t numVertices = voxel->_vertices.size();
+    size_t numFaces = voxel->_indices[VAO::IBO_TRIANGLE].size() / 4;
+    aiVector3D* position = new aiVector3D[numVertices * numVoxels], * normal = new aiVector3D[numVertices * numVoxels];
+    aiFace* indices = new aiFace[numVoxels * numFaces];
+
+    for (int voxelId = 0; voxelId < numVoxels; ++voxelId)
+    {
+        unsigned startIndex = voxelId * numVertices;
+
+        #pragma omp parallel for
+        for (int v = 0; v < numVertices; ++v)
+        {
+            vec3 tPosition = voxel->_vertices[v]._position * scale + translationVectors[voxelId];
+            position[v + voxelId * numVertices] = aiVector3D{ tPosition.x, tPosition.y, tPosition.z };
+            normal[v + voxelId * numVertices] = aiVector3D{ voxel->_vertices[v]._normal.x, voxel->_vertices[v]._normal.y, voxel->_vertices[v]._normal.z };
+        }
+
+        #pragma omp parallel for
+        for (int i = 0; i < voxel->_indices[VAO::IBO_TRIANGLE].size(); i += 4)
+        {
+            indices[voxelId * numFaces + i / 4].mNumIndices = 3;
+            indices[voxelId * numFaces + i / 4] .mIndices = new unsigned[3] {
+                        voxel->_indices[VAO::IBO_TRIANGLE][i] + startIndex,
+                        voxel->_indices[VAO::IBO_TRIANGLE][i + 1] + startIndex,
+                        voxel->_indices[VAO::IBO_TRIANGLE][i + 2] + startIndex
+            };
+        }
+    }
+
+    aiMesh* mesh = new aiMesh();                     
+    mesh->mNumVertices = numVertices * numVoxels;
+    mesh->mVertices = position;
+    mesh->mNormals = normal;
+    mesh->mNumFaces = numFaces * numVoxels;
+    mesh->mFaces = indices;
+    mesh->mPrimitiveTypes = aiPrimitiveType_TRIANGLE; 
+
+    aiMaterial* material = new aiMaterial();     
+    aiNode* root = new aiNode();                  
+    root->mNumMeshes = 1;
+    root->mMeshes = new unsigned [1] { 0 };      
+
+    aiScene* out = new aiScene();                
+    out->mNumMeshes = 1;
+    out->mMeshes = new aiMesh* [1] { mesh };           
+    out->mNumMaterials = 1;
+    out->mMaterials = new aiMaterial * [1] { material }; 
+    out->mRootNode = root;
+    out->mMetaData = new aiMetadata();
+
+    Assimp::Exporter exporter;
+    if (exporter.Export(out, "objnomtl", path) != AI_SUCCESS)
+        throw std::runtime_error(exporter.GetErrorString());
+
+    delete out;
+}
+
+void AlgGeom::Model3D::writeVoxelizationPly(const std::string& path, vec3* translationVectors, vec3 scale, size_t numVoxels)
+{
+    std::filebuf fileBufferBinary;
+    fileBufferBinary.open(path, std::ios::out | std::ios::binary);
+
+    std::ostream outstreamBinary(&fileBufferBinary);
+    if (outstreamBinary.fail()) throw std::runtime_error("Failed to open " + path);
+
+    tinyply::PlyFile plyFile;
+    std::vector<vec3> position, normal;
+    std::vector<uvec3> triangleMesh;
+    Component* voxel = DrawVoxelization::getVoxel();
+
+    for (int voxelId = 0; voxelId < numVoxels; ++voxelId)
+    {
+        unsigned startIndex = position.size();
+
+        for (VAO::Vertex& vertex : voxel->_vertices)
+        {
+            position.push_back(vertex._position * scale + translationVectors[voxelId]);
+            normal.push_back(vertex._normal);
+        }
+
+        for (int i = 0; i < voxel->_indices[VAO::IBO_TRIANGLE].size(); i += 4)
+        {
+            triangleMesh.push_back(uvec3(voxel->_indices[VAO::IBO_TRIANGLE][i], voxel->_indices[VAO::IBO_TRIANGLE][i + 1], voxel->_indices[VAO::IBO_TRIANGLE][i + 2]) + startIndex);
+        }
+    }
+
+    plyFile.add_properties_to_element("vertex", { "x", "y", "z" }, tinyply::Type::FLOAT32, position.size(), reinterpret_cast<uint8_t*>(position.data()), tinyply::Type::INVALID, 0);
+    plyFile.add_properties_to_element("vertex", { "nx", "ny", "nz" }, tinyply::Type::FLOAT32, normal.size(), reinterpret_cast<uint8_t*>(normal.data()), tinyply::Type::INVALID, 0);
+    plyFile.add_properties_to_element("face", { "vertex_index" }, tinyply::Type::UINT32, triangleMesh.size(), reinterpret_cast<uint8_t*>(triangleMesh.data()), tinyply::Type::UINT8, 3);
+    plyFile.write(outstreamBinary, true);
+
+    delete voxel;
+}
+
 AlgGeom::Model3D::MatrixRenderInformation::MatrixRenderInformation()
 {
     for (mat4& matrix : _matrix)
@@ -360,7 +500,7 @@ void AlgGeom::Model3D::Component::completeTopology()
 void AlgGeom::Model3D::Component::generateWireframe()
 {
     std::unordered_map<int, std::unordered_set<int>> segmentIncluded;
-    static auto isIncluded = [&](int index1, int index2) -> bool
+    auto isIncluded = [&](int index1, int index2) -> bool
     {
         std::unordered_map<int, std::unordered_set<int>>::iterator it;
 
@@ -403,4 +543,137 @@ void AlgGeom::Model3D::Component::generatePointCloud()
 {
     this->_indices[VAO::IBO_POINT].resize(this->_vertices.size());
     std::iota(this->_indices[VAO::IBO_POINT].begin(), this->_indices[VAO::IBO_POINT].end(), 0);
+}
+
+
+// .-. VOXELIZATION ._.
+
+AlgGeom::DrawVoxelization::DrawVoxelization() : Model3D()
+{
+}
+
+AlgGeom::DrawVoxelization::~DrawVoxelization()
+{
+}
+
+void AlgGeom::DrawVoxelization::draw(RenderingShader* shader, MatrixRenderInformation* matrixInformation, ApplicationState* appState, GLuint primitive)
+{
+    Component* component = _components[0].get();
+
+    shader->setSubroutineUniform(GL_VERTEX_SHADER, "instanceUniform", "multiInstanceUniform");
+    shader->setUniform("globalScale", _voxelLength);
+
+    if (component->_enabled && component->_vao)
+    {
+        VAO::IBO_slots rendering = VAO::IBO_TRIANGLE;
+
+        switch (primitive)
+        {
+        case GL_TRIANGLES:
+            if (component->_material._useUniformColor)
+            {
+                shader->setUniform("Kd", component->_material._kdColor);
+                shader->setSubroutineUniform(GL_FRAGMENT_SHADER, "kadUniform", "getUniformColor");
+            }
+            else
+            {
+                Texture* checkerPattern = TextureList::getInstance()->getTexture(CHECKER_PATTERN_PATH);
+                checkerPattern->applyTexture(shader, 0, "texKdSampler");
+                shader->setSubroutineUniform(GL_FRAGMENT_SHADER, "kadUniform", "getTextureColor");
+            }
+
+            shader->setUniform("Ks", component->_material._ksColor);
+            shader->setUniform("metallic", component->_material._metallic);
+            shader->setUniform("roughnessK", component->_material._roughnessK);
+            shader->setUniform("mModelView", matrixInformation->multiplyMatrix(MatrixRenderInformation::VIEW, this->_modelMatrix));
+
+            break;
+        case GL_LINES:
+            rendering = VAO::IBO_LINE;
+            shader->setUniform("lineColor", component->_material._lineColor);
+            glLineWidth(component->_lineWidth);
+
+            break;
+        case GL_POINTS:
+            rendering = VAO::IBO_POINT;
+            shader->setUniform("pointColor", component->_material._pointColor);
+            shader->setUniform("pointSize", component->_pointSize);
+
+            break;
+        }
+
+        if (!component->_activeRendering[rendering]) return;
+
+        shader->setUniform("mModelViewProj", matrixInformation->multiplyMatrix(MatrixRenderInformation::VIEW_PROJECTION, this->_modelMatrix));
+        shader->applyActiveSubroutines();
+
+        component->_vao->drawObject(rendering, primitive, static_cast<GLuint>(component->_indices[rendering].size()), _numVoxels);
+
+        matrixInformation->undoMatrix(MatrixRenderInformation::VIEW);
+        matrixInformation->undoMatrix(MatrixRenderInformation::VIEW_PROJECTION);
+    }
+}
+
+AlgGeom::DrawVoxelization* AlgGeom::DrawVoxelization::loadVoxelization(vec3* translation, size_t numVoxels, vec3 voxelScale)
+{
+    Component* component = this->getVoxel();
+    _numVoxels = numVoxels;
+    _voxelLength = voxelScale;
+
+    // Define instances
+    {
+        this->buildVao(component);
+        component->_vao->defineMultiInstancingVBO(VAO::VBO_MULTI_POSITION, vec3(.0f), .0f, GL_FLOAT);
+        component->_vao->setVBOData(VAO::VBO_MULTI_POSITION, translation, numVoxels);
+    }
+
+    this->_components.push_back(std::unique_ptr<Component>(component));
+
+    return this;
+}
+
+AlgGeom::Model3D::Component* AlgGeom::DrawVoxelization::getVoxel()
+{
+    Component* component = new Component;
+
+    // Geometry
+    {
+        const vec3 minPosition(-.5f), maxPosition(.5f);
+        const std::vector<vec3> points
+        {
+            vec3(minPosition[0], minPosition[1], maxPosition[2]),		vec3(maxPosition[0], minPosition[1], maxPosition[2]),
+            vec3(minPosition[0], minPosition[1], minPosition[2]),	    vec3(maxPosition[0], minPosition[1], minPosition[2]),
+            vec3(minPosition[0], maxPosition[1], maxPosition[2]),		vec3(maxPosition[0], maxPosition[1], maxPosition[2]),
+            vec3(minPosition[0], maxPosition[1], minPosition[2]),		vec3(maxPosition[0], maxPosition[1], minPosition[2])
+        };
+        const std::vector<vec3> normals
+        {
+            glm::normalize(vec3(-0.5f, -0.5f, 0.5f)),	glm::normalize(vec3(0.5f, -0.5f, 0.5f)),
+            glm::normalize(vec3(-0.5f, -0.5f, -0.5f)),	glm::normalize(vec3(0.5f, -0.5f, -0.5f)),
+            glm::normalize(vec3(-0.5f, 0.5f, 0.5f)),	glm::normalize(vec3(0.5f, 0.5f, 0.5f)),
+            glm::normalize(vec3(-0.5f, 0.5f, -0.5f)),	glm::normalize(vec3(0.5f, 0.5f, -0.5f))
+        };
+        const std::vector<vec2> textCoords{ vec2(0.0f), vec2(0.0f), vec2(0.0f), vec2(0.0f), vec2(0.0f), vec2(0.0f), vec2(0.0f), vec2(0.0f) };
+
+        for (int pointIdx = 0; pointIdx < points.size(); ++pointIdx)
+        {
+            component->_vertices.push_back(VAO::Vertex{ points[pointIdx], normals[pointIdx], textCoords[pointIdx] });
+        }
+    }
+
+    // Topology
+    {
+        component->_indices[VAO::IBO_TRIANGLE] = std::vector<GLuint>
+        {
+            0, 1, 2, RESTART_PRIMITIVE_INDEX, 1, 3, 2, RESTART_PRIMITIVE_INDEX, 4, 5, 6, RESTART_PRIMITIVE_INDEX,
+            5, 7, 6, RESTART_PRIMITIVE_INDEX, 0, 1, 4, RESTART_PRIMITIVE_INDEX, 1, 5, 4, RESTART_PRIMITIVE_INDEX,
+            2, 0, 4, RESTART_PRIMITIVE_INDEX, 2, 4, 6, RESTART_PRIMITIVE_INDEX, 1, 3, 5, RESTART_PRIMITIVE_INDEX,
+            3, 7, 5, RESTART_PRIMITIVE_INDEX, 3, 2, 6, RESTART_PRIMITIVE_INDEX, 3, 6, 7, RESTART_PRIMITIVE_INDEX
+        };
+
+        component->generatePointCloud();
+        component->generateWireframe();
+    }
+
+    return component;
 }

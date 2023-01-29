@@ -20,6 +20,10 @@ public:
 	static void initializeBufferGPU(T*& bufferPointer, size_t size, T* buffer = nullptr);
 
 	static void setDevice(uint8_t deviceIndex = UINT8_MAX);
+
+	static void startTimer(cudaEvent_t& startEvent, cudaEvent_t& stopEvent);
+
+	static float stopTimer(cudaEvent_t& startEvent, cudaEvent_t& stopEvent);
 };
 
 template<typename T>

@@ -113,7 +113,8 @@ namespace AlgGeom
 		Model3D* setPointColor(const vec3& color);
 		Model3D* setTriangleColor(const vec4& color);
 		Model3D* setTopologyVisibility(VAO::IBO_slots topology, bool visible);
-		AlgGeom::DrawVoxelization* voxelize(const uvec3& voxelizationDimensions);
+		AlgGeom::DrawVoxelization* voxelize(const uvec3& voxelizationDimensions, bool createOpenGLStructures = true);
+		AlgGeom::DrawVoxelization* voxelize(const uvec3& voxelizationDimensions, float& responseTime, bool createOpenGLStructures = true);
 	};
 
 	class DrawVoxelization : public Model3D

@@ -3,6 +3,7 @@
 
 #include "ChronoUtilities.h"
 #include "DrawMesh.h"
+#include "../FileManagement.h"
 #include "RandomUtilities.h"
 
 
@@ -16,7 +17,26 @@ void AlgGeom::SceneContent::buildScenario()
     auto model = (new DrawMesh())->loadModelOBJ("Assets/Models/Sticks&Snow.obj");
     model->moveGeometryToOrigin(model->getModelMatrix(), 10.0f)->setModelMatrix(glm::translate(model->getModelMatrix(), vec3(.0f, .0f, .5f)));
 	this->addNewModel(model);
-	this->addNewModel(model->voxelize(uvec3(256))->overrideModelName());
+	this->addNewModel(model->voxelize(uvec3(8), true)->overrideModelName());
+
+#if TEST_MS
+	for (int voxelDims = 8; voxelDims <= 1024; voxelDims *= 2)
+	{
+		printf("Testing dimensionality %i\n", voxelDims);
+
+		std::vector<float> msBuffer;
+		float ms;
+
+		for (int testId = 0; testId < 10; ++testId)
+		{
+			model->voxelize(uvec3(voxelDims), ms, false);
+			msBuffer.push_back(ms);
+		}
+
+		const std::string file = "performance/" + std::to_string(voxelDims) + ".txt";
+		FileStorageUtilities::writeString(file, msBuffer);
+	}
+#endif
 }
 
 

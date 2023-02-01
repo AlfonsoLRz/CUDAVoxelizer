@@ -8,6 +8,8 @@
 
 namespace AlgGeom
 {
+	#define TEST_MS false
+
 	class SceneContent
 	{
 	public:

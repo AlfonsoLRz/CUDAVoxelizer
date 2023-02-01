@@ -3,6 +3,7 @@
 
 #include "assimp/Exporter.hpp"
 #include "../CUDAHandler.h"
+#include "../FileManagement.h"
 #include "RandomUtilities.h"
 #include "tinyply.h"
 #include "../Voxelization.cuh"
@@ -176,8 +177,20 @@ AlgGeom::Model3D* AlgGeom::Model3D::setTopologyVisibility(VAO::IBO_slots topolog
     return this;
 }
 
-AlgGeom::DrawVoxelization* AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions)
+AlgGeom::DrawVoxelization* AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions, bool createOpenGLStructures)
 {
+    float fooTime = .0;
+    return this->voxelize(voxelizationDimensions, fooTime, createOpenGLStructures);
+}
+
+AlgGeom::DrawVoxelization* AlgGeom::Model3D::voxelize(const uvec3& voxelizationDimensions, float& responseTime, bool createOpenGLStructures)
+{
+    if (createOpenGLStructures)
+    {
+        delete _voxelization;
+        _voxelization = nullptr;
+    }
+
     // Define voxels
     size_t numThreadsBlock = 512;
     size_t numSamples = 1024;
@@ -258,18 +271,25 @@ AlgGeom::DrawVoxelization* AlgGeom::Model3D::voxelize(const uvec3& voxelizationD
 
         CUDAHandler::downloadBufferGPU(translationGPU, translationBuffer, numTranslationVectors);
 
-        printf("Response time (ms): %f\n", CUDAHandler::stopTimer(startTimer, stopTimer));
+        responseTime = CUDAHandler::stopTimer(startTimer, stopTimer);
+        printf("Response time (ms): %f\n", responseTime);
 
-        _voxelization = new DrawVoxelization();
-        _voxelization->loadVoxelization(translationBuffer, numTranslationVectors, aabb.getStepLength());
-        this->writeVoxelizationObj("voxels.obj", translationBuffer, aabb.getStepLength(), numTranslationVectors);
+        if (createOpenGLStructures)
+        {
+            _voxelization = new DrawVoxelization();
+            _voxelization->loadVoxelization(translationBuffer, numTranslationVectors, aabb.getStepLength());
+            this->writeVoxelizationObj("voxels.obj", translationBuffer, aabb.getStepLength(), numTranslationVectors);
+        }
 
         free(translationBuffer);
+        CUDAHandler::free(translationGPU);
+        CUDAHandler::free(occupiedVoxelsGPU);
     }
 
     CUDAHandler::free(voxelGPU);
     CUDAHandler::free(verticesGPU);
     CUDAHandler::free(indicesGPU);
+    CUDAHandler::free(noiseGPU);
     free(noise);
     free(voxels);
 

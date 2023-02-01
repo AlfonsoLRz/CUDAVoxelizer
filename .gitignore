@@ -70,3 +70,7 @@ vs/Source/*.png
 
 # UI
 *.ini
+
+# Others
+CUDAVoxelizer/performance/*
+python/*

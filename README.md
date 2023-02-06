@@ -25,7 +25,7 @@ The project has been developed with Microsoft Visual Studio 2022, and the follow
 
 ## Features
 
-1. The renderer is shared with <a href="https://github.com/AlfonsoLRz/AG2223AG2323</a> and thus we refer the reader to this project to check which rendering features are included and how are interactions defined (which keys and menus are active).
+1. The renderer is shared with <a href="https://github.com/AlfonsoLRz/AG2223">AG2323</a> and thus we refer the reader to this project to check which rendering features are included and how are interactions defined (which keys and menus are active).
 
 2. Voxelization of any model that can be read by Assimp. These are loaded as a set of components, with each one iterated to fill a regular grid of variable dimensionality. Triangles from every component are sampled with `n` random points within them to fill occupied voxels.
     - The number of sample points can be configured through `n`. The fewer, the faster and less accurate is the voxelization.
@@ -33,7 +33,7 @@ The project has been developed with Microsoft Visual Studio 2022, and the follow
     - The voxelization of every component is overlapped with other components through CUDA streams. The maximum number of streams can also be configured for measuring the response time. 
 
     - The response time is also measured in `ms`, excluding the transfer of voxel positions to GPU in OpenGL framework.
-    
+
     - A testing module is given to test different voxelization dimensions over the same model(s).
 
 ## Performance

@@ -42,7 +42,7 @@ The following section aims to note how efficient is the implemented algorithm ov
 
 ### Sticks & Snow
 
-3D model with 6.7M points and 7.87M triangle, by <a href="https://tinynocky.gumroad.com/">tinynocky</a>.
+3D model with 6.7M points and 7.87M triangles, by <a href="https://tinynocky.gumroad.com/">tinynocky</a>.
 
 <table style="margin:auto; width:90%">
 <tr>
@@ -57,5 +57,5 @@ The following section aims to note how efficient is the implemented algorithm ov
 
 <p align="center" style="width:80%; margin:auto;">
     <img src="readme_assets/ms_sticks.png"/></br>
-    <em>Voxelization of dimensionality 412x256x256 (X x Y x Z) rendered with <a href="https://github.com/knightcrawler25/">GLSL-PathTracer</a> project.</em>
+    <em>Latency of voxelizing the Stick & Snow model with different resolution (n x n x n).</em>
 </p>
